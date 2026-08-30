@@ -55,7 +55,8 @@ function showFatal(msg) {
 $('errRetry').addEventListener('click', () => location.reload());
 window.addEventListener('unhandledrejection', e => {
   console.error('unhandledrejection:', e.reason);
-  showFatal('加载或运行出错 · ' + (e.reason?.message || e.reason || 'unknown') + ' — 请点击重试。');
+  const msg = String(e.reason?.message || e.reason || 'unknown').slice(0, 200);
+showFatal('Load or execution error · ' + msg + ' — please click Retry.');
 });
 
 const J = u => { loadMgr.itemStart(u); return fetch(u).then(r => r.json()).finally(() => loadMgr.itemEnd(u)); };
