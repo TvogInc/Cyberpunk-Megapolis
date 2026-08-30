@@ -1371,18 +1371,19 @@ function showMsg(text, seconds = 2.2) {
 const MODE_CN = { ground: '地面', air: '空中', swing: '摆荡', wallrun: '墙跑', zip: '飞掠' };
 
 // ---------- debug hooks ----------
-window.__world = world;
-window.__camera = camera;
-window.__ctrl = ctrl;
-window.__input = input;
-window.__renderer = renderer;
-window.__startGame = g => { selectGender(g); startGame(); };
-window.__tp = (x, y, z) => { window.__freeCam = true; window.__fcPos = new THREE.Vector3(x, y, z); };
-window.__lookAt = (x, y, z) => { window.__freeCam = true; window.__fcLook = [x, y, z]; };
-window.__groundAt = groundAt;
-window.__castRay = (ox, oy, oz, dx, dy, dz, far) =>
-  castRay(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), far);
-
+if (location.search.includes('debug')) {
+  window.__world = world;
+  window.__camera = camera;
+  window.__ctrl = ctrl;
+  window.__input = input;
+  window.__renderer = renderer;
+  window.__startGame = g => { selectGender(g); startGame(); };
+  window.__tp = (x, y, z) => { window.__freeCam = true; window.__fcPos = new THREE.Vector3(x, y, z); };
+  window.__lookAt = (x, y, z) => { window.__freeCam = true; window.__fcLook = [x, y, z]; };
+  window.__groundAt = groundAt;
+  window.__castRay = (ox, oy, oz, dx, dy, dz, far) =>
+    castRay(new THREE.Vector3(ox, oy, oz), new THREE.Vector3(dx, dy, dz).normalize(), far);
+}
 // ---------- post: TAA + bloom ----------
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(
   innerWidth, innerHeight, { samples: 4, type: THREE.HalfFloatType }));
