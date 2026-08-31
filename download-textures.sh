@@ -71,14 +71,30 @@ echo ""
 
 FAILED=0
 SUCCESS=0
+MAX_RETRIES=3
+RETRY_DELAY=2
 
 for texture in "${TEXTURES[@]}"; do
   url="${ASSET_URL}/${texture}"
   printf "%-50s " "$texture"
-  if curl -f -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -o "$TEXTURE_DIR/$texture" "$url"; then
-    echo "✓"
-    ((SUCCESS++))
-  else
+  
+  retry=0
+  while [ $retry -lt $MAX_RETRIES ]; do
+    if curl -f -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            --connect-timeout 5 --max-time 30 \
+            -o "$TEXTURE_DIR/$texture" "$url"; then
+      echo "✓"
+      ((SUCCESS++))
+      break
+    fi
+    ((retry++))
+    if [ $retry -lt $MAX_RETRIES ]; then
+      printf "[retry %d/$MAX_RETRIES] " $retry
+      sleep $RETRY_DELAY
+    fi
+  done
+  
+  if [ $retry -eq $MAX_RETRIES ]; then
     echo "✗ FAILED"
     ((FAILED++))
   fi
@@ -87,3 +103,11 @@ done
 echo ""
 echo "Download complete!"
 echo "Success: $SUCCESS | Failed: $FAILED"
+
+if [ $FAILED -gt 0 ]; then
+  echo ""
+  echo "Troubleshooting:"
+  echo "- Check if the asset server is online: curl -I $ASSET_URL"
+  echo "- Verify network connectivity"
+  echo "- Check available disk space in $TEXTURE_DIR"
+fi
