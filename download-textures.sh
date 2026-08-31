@@ -75,7 +75,7 @@ SUCCESS=0
 for texture in "${TEXTURES[@]}"; do
   url="${ASSET_URL}/${texture}"
   printf "%-50s " "$texture"
-  if curl -f -s -o "$TEXTURE_DIR/$texture" "$url"; then
+  if curl -f -s -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" -o "$TEXTURE_DIR/$texture" "$url"; then
     echo "✓"
     ((SUCCESS++))
   else
