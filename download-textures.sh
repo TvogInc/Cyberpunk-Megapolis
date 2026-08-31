@@ -1,11 +1,12 @@
 #!/bin/bash
 # Download missing character textures for Cyberpunk Megapolis
-# This script fetches .webp textures for the character models
+# This script fetches .webp and .png textures for the character models
 
 TEXTURE_DIR="chars/textures"
 mkdir -p "$TEXTURE_DIR"
 
-ASSET_URL="https://zrlxxdaz56kym.ok.kimi.link/chars/textures"
+WEBP_URL="https://zrlxxdaz56kym.ok.kimi.link/chars/textures"
+PNG_URL="https://zrlxxdaz56kym.ok.kimi.link"
 
 TEXTURES=(
   "T_SurvGirl_Hair_AO.webp"
@@ -66,7 +67,8 @@ TEXTURES=(
 )
 
 echo "Downloading character textures to $TEXTURE_DIR..."
-echo "Source: $ASSET_URL"
+echo "WebP source: $WEBP_URL"
+echo "PNG source: $PNG_URL"
 echo ""
 
 FAILED=0
@@ -75,7 +77,13 @@ MAX_RETRIES=3
 RETRY_DELAY=2
 
 for texture in "${TEXTURES[@]}"; do
-  url="${ASSET_URL}/${texture}"
+  # Determine URL based on file extension
+  if [[ $texture == *.webp ]]; then
+    url="${WEBP_URL}/${texture}"
+  else
+    url="${PNG_URL}/${texture}"
+  fi
+  
   printf "%-50s " "$texture"
   
   retry=0
@@ -107,7 +115,9 @@ echo "Success: $SUCCESS | Failed: $FAILED"
 if [ $FAILED -gt 0 ]; then
   echo ""
   echo "Troubleshooting:"
-  echo "- Check if the asset server is online: curl -I $ASSET_URL"
+  echo "- Check if the asset servers are online"
+  echo "- WebP server: curl -I $WEBP_URL"
+  echo "- PNG server: curl -I $PNG_URL"
   echo "- Verify network connectivity"
   echo "- Check available disk space in $TEXTURE_DIR"
 fi
