@@ -17,6 +17,12 @@
     --ink: #eef1f8;
     --dim: #8b93a8;
     --mono: 'Geist Mono', ui-monospace, "SF Mono", Menlo, monospace;
+    --neon-cyan: #00ffcc;
+    --neon-magenta: #ff0055;
+    --neon-yellow: #fff200;
+    --pm-bg: rgba(2,4,10,0.93);
+    --pm-carbon: #0a0e14;
+    --pm-border: rgba(0,255,204,0.25);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: #0a0c10; overflow: hidden;
@@ -94,16 +100,85 @@
     font-size: 10.5px; font-weight: 300; letter-spacing: .22em;
     color: #707a92; text-transform: uppercase; text-shadow: 0 1px 8px rgba(0,0,0,.9); }
 
-  /* ---------- pause ---------- */
-  #pause { position: fixed; inset: 0; z-index: 19; display: flex;
+  /* ---------- cyberpunk neon pause menu ---------- */
+  #pauseMenu { position: fixed; inset: 0; z-index: 19; display: flex;
     align-items: center; justify-content: center;
-    background: rgba(3,5,12,0.55); backdrop-filter: blur(2px);
-    opacity: 0; pointer-events: none; transition: opacity .3s; cursor: pointer; }
-  #pause.show { opacity: 1; pointer-events: auto; }
-  #pause .p-box { text-align: center; }
-  #pause .p-title { font-size: 15px; letter-spacing: .4em; color: var(--cyan);
-    text-transform: uppercase; margin-bottom: 10px; }
-  #pause .p-sub { font-size: 11px; letter-spacing: .2em; color: var(--dim); }
+    opacity: 0; pointer-events: none; transition: opacity .35s; }
+  #pauseMenu.show { opacity: 1; pointer-events: auto; }
+  .pm-overlay { position: absolute; inset: 0;
+    background: var(--pm-bg); backdrop-filter: blur(16px); }
+  .pm-scanlines { position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px,
+      rgba(0,0,0,0.12) 2px, rgba(0,0,0,0.12) 4px);
+    animation: pmScanMove 10s linear infinite; }
+  @keyframes pmScanMove { from { background-position: 0 0; } to { background-position: 0 100vh; } }
+  .pm-noise { position: absolute; inset: 0; pointer-events: none; opacity: 0.035;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E"); }
+  .pm-card { position: relative; z-index: 2; width: min(680px, 92vw); max-height: 88vh;
+    overflow-y: auto; padding: 28px 32px 24px;
+    background: var(--pm-carbon); border: 1px solid var(--pm-border);
+    clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 22px 100%, 0 calc(100% - 22px));
+    filter: drop-shadow(0 0 18px rgba(0,255,204,0.12)) drop-shadow(0 0 40px rgba(0,0,0,0.6)); }
+  .pm-card::-webkit-scrollbar { width: 4px; }
+  .pm-card::-webkit-scrollbar-track { background: #060a10; }
+  .pm-card::-webkit-scrollbar-thumb { background: var(--neon-cyan); border-radius: 2px; }
+  .pm-header { margin-bottom: 22px; }
+  .pm-status { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .pm-dot { width: 8px; height: 8px; background: var(--neon-yellow); border-radius: 50%;
+    box-shadow: 0 0 8px var(--neon-yellow); animation: pmPulse 1.6s ease infinite; }
+  @keyframes pmPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .pm-status-text { font-size: 10px; letter-spacing: .32em; color: var(--neon-yellow);
+    text-transform: uppercase; overflow: hidden; white-space: nowrap;
+    animation: pmBoot 1.4s steps(28) both; }
+  @keyframes pmBoot { from { width: 0; } to { width: 100%; } }
+  .pm-title { font-size: clamp(20px,2.6vw,28px); font-weight: 700; letter-spacing: .14em;
+    color: var(--neon-cyan); text-transform: uppercase;
+    text-shadow: 0 0 16px rgba(0,255,204,0.4);
+    opacity: 0; animation: pmReveal .5s .4s ease forwards; }
+  @keyframes pmReveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .pm-section { margin-top: 18px; opacity: 0; animation: pmReveal .4s ease forwards; }
+  .pm-section:nth-child(2) { animation-delay: .55s; }
+  .pm-section:nth-child(3) { animation-delay: .7s; }
+  .pm-section:nth-child(4) { animation-delay: .85s; }
+  .pm-section-title { font-size: 9.5px; letter-spacing: .34em; color: var(--neon-magenta);
+    text-transform: uppercase; margin-bottom: 10px; padding-bottom: 5px;
+    border-bottom: 1px solid rgba(255,0,85,0.2); }
+  .pm-char-widget { display: flex; align-items: center; gap: 14px; padding: 10px 0; }
+  .pm-arrow { display: flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; border: 1px solid var(--pm-border); border-radius: 4px;
+    background: rgba(0,255,204,0.04); cursor: pointer; transition: all .18s; flex-shrink: 0; }
+  .pm-arrow:hover { background: rgba(0,255,204,0.12); border-color: var(--neon-cyan);
+    box-shadow: 0 0 14px rgba(0,255,204,0.25); }
+  .pm-arrow svg { width: 16px; height: 16px; stroke: var(--neon-cyan); stroke-width: 2;
+    fill: none; transition: stroke .18s; }
+  .pm-char-display { flex: 1; text-align: center; overflow: hidden;
+    transition: opacity .2s ease, transform .2s ease; }
+  .pm-char-name { font-size: 18px; font-weight: 600; letter-spacing: .1em;
+    color: var(--neon-cyan); text-shadow: 0 0 10px rgba(0,255,204,0.3); }
+  .pm-char-tag { font-size: 9px; letter-spacing: .28em; color: var(--neon-magenta);
+    text-transform: uppercase; margin-top: 3px; }
+  .pm-controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 22px; }
+  .pm-ctrl-group { margin-bottom: 10px; }
+  .pm-ctrl-group:nth-child(3) { grid-column: 1 / -1; }
+  .pm-ctrl-title { font-size: 9px; letter-spacing: .24em; color: var(--neon-yellow);
+    text-transform: uppercase; margin-bottom: 5px; opacity: 0.85; }
+  .pm-ctrl-row { display: flex; align-items: baseline; gap: 8px; padding: 2.5px 0; }
+  .pm-key { font-size: 9.5px; font-weight: 600; color: var(--neon-cyan);
+    background: rgba(0,255,204,0.06); border: 1px solid rgba(0,255,204,0.18);
+    border-radius: 3px; padding: 1.5px 7px; white-space: nowrap; min-width: 52px;
+    text-align: center; letter-spacing: .06em; }
+  .pm-action { font-size: 10px; font-weight: 300; color: #a9b2c8; letter-spacing: .03em; }
+  .pm-resume { display: block; width: 100%; margin-top: 18px; padding: 12px 0;
+    font-size: 13px; font-weight: 600; letter-spacing: .3em; text-transform: uppercase;
+    color: var(--neon-cyan); background: rgba(0,255,204,0.05);
+    border: 1px solid rgba(0,255,204,0.35); border-radius: 4px; cursor: pointer;
+    transition: all .2s; position: relative; overflow: hidden; }
+  .pm-resume:hover { background: rgba(0,255,204,0.12); border-color: var(--neon-cyan);
+    box-shadow: 0 0 22px rgba(0,255,204,0.2); text-shadow: 0 0 8px rgba(0,255,204,0.5); }
+  .pm-resume::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%;
+    height: 100%; background: linear-gradient(90deg, transparent, rgba(0,255,204,0.08), transparent);
+    transition: left .4s; }
+  .pm-resume:hover::before { left: 100%; }
 
   /* ---------- in-game HUD ---------- */
   #stats { position: fixed; left: 22px; bottom: 20px; z-index: 10; display: flex; gap: 10px;
@@ -178,10 +253,58 @@
     <button id="enterBtn" disabled="">Enter Game</button>
   </div>
 </div>
-<div id="pause">
-  <div class="p-box">
-    <div class="p-title"></div>
-    <div class="p-sub"></div>
+<div id="pauseMenu">
+  <div class="pm-overlay"></div>
+  <div class="pm-scanlines"></div>
+  <div class="pm-noise"></div>
+  <div class="pm-card">
+    <div class="pm-header">
+      <div class="pm-status"><span class="pm-dot"></span><span class="pm-status-text">SYSTEM STATUS: PAUSED // SIGNAL LOCKED</span></div>
+      <div class="pm-title">PAUSED</div>
+    </div>
+    <div class="pm-section">
+      <div class="pm-section-title">// RUNNER SELECT</div>
+      <div class="pm-char-widget">
+        <button class="pm-arrow" id="pmPrev" aria-label="previous character">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <div class="pm-char-display" id="pmCharDisplay">
+          <div class="pm-char-name" id="pmCharName">Survival Man</div>
+          <div class="pm-char-tag" id="pmCharTag">RUNNER 01 // READY</div>
+        </div>
+        <button class="pm-arrow" id="pmNext" aria-label="next character">
+          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="pm-section">
+      <div class="pm-section-title">// CONTROLS HUD</div>
+      <div class="pm-controls-grid">
+        <div class="pm-ctrl-group">
+          <div class="pm-ctrl-title">Movement &amp; Basic Actions</div>
+          <div class="pm-ctrl-row"><span class="pm-key">W A S D</span><span class="pm-action">Move (walk / strafe)</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">Shift</span><span class="pm-action">Sprint (increases speed)</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">Space</span><span class="pm-action">Jump</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">S</span><span class="pm-action">Dive (airborne, downward velocity)</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">R</span><span class="pm-action">Reset to last safe spot</span></div>
+        </div>
+        <div class="pm-ctrl-group">
+          <div class="pm-ctrl-title">Web Swinging &amp; Traversal</div>
+          <div class="pm-ctrl-row"><span class="pm-key">Space</span><span class="pm-action">In air — fire web grapple to swing (auto after 0.18s airborne)</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">W</span><span class="pm-action">While swinging — pump forward, gain momentum</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">A / D</span><span class="pm-action">While swinging — steer left / right</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">Shift</span><span class="pm-action">While swinging — reel in (shorten rope, gain height)</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">E / RMB</span><span class="pm-action">Zip — grapple to nearby target for fast movement</span></div>
+        </div>
+        <div class="pm-ctrl-group">
+          <div class="pm-ctrl-title">Camera &amp; UI</div>
+          <div class="pm-ctrl-row"><span class="pm-key">Mouse</span><span class="pm-action">Look around</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">T</span><span class="pm-action">Cycle graphics presets</span></div>
+          <div class="pm-ctrl-row"><span class="pm-key">Enter</span><span class="pm-action">Confirm (start game / resume from pause)</span></div>
+        </div>
+      </div>
+    </div>
+    <button class="pm-resume" id="pmResume">RESUME</button>
   </div>
 </div>
 <div id="stats">

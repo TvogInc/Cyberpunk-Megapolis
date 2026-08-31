@@ -1284,15 +1284,22 @@ document.querySelectorAll('.m-card').forEach(c =>
   c.addEventListener('click', () => selectGender(c.dataset.g)));
 addEventListener('keydown', e => {
   if (phase === 'menu') {
-    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight')
-      selectGender(selGender === 'man' ? 'girl' : 'man');
-    if (e.code === 'ArrowUp') selectGender('man');
-    if (e.code === 'ArrowDown') selectGender('girl');
+    // Mouse-only menu navigation (arrow keys intentionally not handled).
     if (e.code === 'Enter' && selGender) startGame();
-  } else if (phase === 'pause' && e.code === 'Enter') {
+  } else if (phase === 'pause' && (e.code === 'Enter' || e.code === 'Escape')) {
+    // Enter resumes (existing behavior); Escape toggles back into the game.
     renderer.domElement.requestPointerLock?.();
+  } else if (phase === 'play' && e.code === 'Escape' && !document.pointerLockElement) {
+    // Fallback when pointer lock isn't active (lock request failed / unsupported):
+    // Escape must still open the pause menu. With an active lock the browser
+    // exits the lock on Escape and the pointerlockchange handler pauses us.
+    freezeGameplayState();
+    phase = 'pause';
+    $('pauseMenu').classList.add('show');
   }
-  if (e.code === 'KeyT' && !e.repeat)
+  // T cycles graphics presets — game control, gated to active gameplay so it
+  // can't leak into the menus while paused.
+  if (e.code === 'KeyT' && !e.repeat && phase === 'play')
     applyPreset(PRESET_ORDER[(PRESET_ORDER.indexOf(presetName) + 1) % PRESET_ORDER.length]);
 });
 enterBtn.addEventListener('click', () => selGender && startGame());
@@ -1350,13 +1357,75 @@ document.addEventListener('pointerlockchange', () => {
   if (phase === 'menu' || !usedLock) return;
   if (document.pointerLockElement === renderer.domElement) {
     phase = 'play';
-    $('pause').classList.remove('show');
+    $('pauseMenu').classList.remove('show');
+    restoreGameplayState();
   } else if (phase === 'play') {
+    freezeGameplayState();
     phase = 'pause';
-    $('pause').classList.add('show');
+    $('pauseMenu').classList.add('show');
+    document.exitPointerLock?.();   // free the cursor for mouse-driven menu use
   }
 });
-$('pause').addEventListener('click', () => renderer.domElement.requestPointerLock?.());
+
+// ---------- pause freeze: cache & restore the live physics state ----------
+// While phase === 'pause' the animate loop already skips ctrl.update, so the
+// 0.18s automatic grapple timer (ctrl.airTime) and every movement-physics field
+// are frozen mid-value. This snapshot makes the freeze explicit and restores
+// the exact pre-pause state on resume, so the airborne grapple timer continues
+// from where it stopped instead of resetting.
+const __pauseSnapshot = {
+  airTime: 0, mode: 'air', webOn: false, ropeLen: 0,
+  diving: false, steer: 0,
+  vel: new THREE.Vector3(),
+};
+function freezeGameplayState() {
+  __pauseSnapshot.airTime = ctrl.airTime;       // the 0.18s automatic grapple timer
+  __pauseSnapshot.mode = ctrl.mode;
+  __pauseSnapshot.webOn = ctrl.webOn;
+  __pauseSnapshot.ropeLen = ctrl.ropeLen;
+  __pauseSnapshot.diving = ctrl.diving;
+  __pauseSnapshot.steer = ctrl.steer;
+  __pauseSnapshot.vel.copy(ctrl.vel);
+  console.log(`[pause] frozen airTime=${ctrl.airTime.toFixed(3)}s mode=${ctrl.mode} webOn=${ctrl.webOn}`);
+}
+function restoreGameplayState() {
+  ctrl.airTime = __pauseSnapshot.airTime;       // resume the 0.18s grapple timer where it stopped
+  ctrl.mode = __pauseSnapshot.mode;
+  ctrl.webOn = __pauseSnapshot.webOn;
+  ctrl.ropeLen = __pauseSnapshot.ropeLen;
+  ctrl.diving = __pauseSnapshot.diving;
+  ctrl.steer = __pauseSnapshot.steer;
+  ctrl.vel.copy(__pauseSnapshot.vel);
+  console.log(`[resume] restored airTime=${ctrl.airTime.toFixed(3)}s mode=${ctrl.mode} webOn=${ctrl.webOn}`);
+}
+
+// ---------- pause menu: mouse-driven character select + resume ----------
+const PAUSE_CHARS = [
+  { id: 'man', name: 'Survival Man', tag: 'RUNNER 01 // READY' },
+  { id: 'girl', name: 'Survival Girl', tag: 'RUNNER 02 // READY' },
+];
+let pmIndex = 0;
+const pmDisplay = $('pmCharDisplay'), pmName = $('pmCharName'), pmTag = $('pmCharTag');
+function pmShow(index, direction = 0) {
+  pmIndex = (index + PAUSE_CHARS.length) % PAUSE_CHARS.length;
+  const c = PAUSE_CHARS[pmIndex];
+  selectGender(c.id);   // keep the real selection + main-menu cards in sync
+  pmName.textContent = c.name;
+  pmTag.textContent = c.tag;
+  pmDisplay.style.transition = 'none';
+  pmDisplay.style.opacity = '0';
+  pmDisplay.style.transform = `translateX(${direction * 26}px)`;
+  void pmDisplay.offsetWidth;   // reflow, then animate in
+  pmDisplay.style.transition = 'opacity .22s ease, transform .22s ease';
+  pmDisplay.style.opacity = '1';
+  pmDisplay.style.transform = 'translateX(0)';
+}
+// display-only init: keeps Enter disabled until a real selection is made
+pmName.textContent = PAUSE_CHARS[0].name;
+pmTag.textContent = PAUSE_CHARS[0].tag;
+$('pmPrev').addEventListener('click', () => pmShow(pmIndex - 1, -1));
+$('pmNext').addEventListener('click', () => pmShow(pmIndex + 1, 1));
+$('pmResume').addEventListener('click', () => renderer.domElement.requestPointerLock?.());
 
 // ---------- HUD ----------
 const statsEl = { speed: $('stSpeed'), height: $('stHeight'), state: $('stState') };
