@@ -1,3 +1,4 @@
+
 // Cyberpunk Megapolis — three.js web explorer
 // Data + assets produced by the unitypackage-to-web pipeline (see SKILL.md).
 import * as THREE from 'three';
@@ -14,7 +15,7 @@ import { Player } from './player.js?v=8';
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
 // "restart from the sky every few seconds" loop with zero errors)
-const BUILD = '2026-07-16b1';
+const BUILD = '2026-08-31a1';
 console.log(`[build] ${BUILD}`);
 
 // ---------- coordinate convention (verified: case A — Blender FBX->glTF export_yup) ----------
@@ -55,8 +56,17 @@ function showFatal(msg) {
 $('errRetry').addEventListener('click', () => location.reload());
 window.addEventListener('unhandledrejection', e => {
   console.error('unhandledrejection:', e.reason);
-  const msg = String(e.reason?.message || e.reason || 'unknown').slice(0, 200);
-showFatal('Load or execution error · ' + msg + ' — please click Retry.');
+  // Pointer-lock denials (SecurityError during the browser's post-Escape
+  // cooldown) are routine UX events, not fatal errors — never surface them
+  // on the error overlay. tryPointerLock() already catches them; this guard
+  // is belt-and-braces for any call site that doesn't.
+  const r = e.reason;
+  if (r && (r.name === 'SecurityError' || /pointer\s*lock/i.test(String(r.message || r)))) {
+    e.preventDefault();
+    return;
+  }
+  const msg = String(r?.message || r || 'unknown').slice(0, 200);
+  showFatal('Load or execution error · ' + msg + ' — please click Retry.');
 });
 
 const J = u => { loadMgr.itemStart(u); return fetch(u).then(r => r.json()).finally(() => loadMgr.itemEnd(u)); };
@@ -324,8 +334,12 @@ if (!location.search.includes('noclutter')) {
     fetch('./data/deck_clutter.json').then(r => (r.ok ? r.json() : null)).catch(() => null),
     fetch('./data/belt.json').then(r => (r.ok ? r.json() : null)).catch(() => null),
   ]);
-  if (clutter?.length) SCENE.placements.push(...clutter);
-  if (belt?.length) SCENE.placements.push(...belt);
+  // deck_clutter.json currently contains a generator crash report instead of
+  // placements ({"errorMessage":"Process exited unexpectedly…"}) — validate
+  // it's really an array before merging, and warn instead of failing silently.
+  if (Array.isArray(clutter) && clutter.length) SCENE.placements.push(...clutter);
+  else if (clutter) console.warn('[clutter] deck_clutter.json is not a placement array — re-run scripts/gen_deck_clutter.py');
+  if (Array.isArray(belt) && belt.length) SCENE.placements.push(...belt);
   console.log(`deck clutter: ${clutter?.length ?? 0} props, belt: ${belt?.length ?? 0} props`);
 }
 
@@ -685,6 +699,7 @@ scene.add(world);
 // their coplanar ground planes don't z-fight
 const dupSeen = new Map();
 const placements = [];
+let trafficSkipped = 0;
 let fixCount = 0;
 const fixSign = pl => {   // snap authored-floating billboards onto the nearest tower facade
   for (const f of SIGN_FIXES) {
@@ -697,6 +712,11 @@ const fixSign = pl => {   // snap authored-floating billboards onto the nearest 
   return pl;
 };
 for (const pl of SCENE.placements) {
+  // Unity air-traffic pool: 7 animated-vehicle prefabs all parked at the same
+  // hidden spot (0, -25.5, 0) — inside the walkable metro level they render as
+  // a z-fighting pile of cars/buses/trucks. The lanes that moved them are
+  // FX-only and skipped, so the pool has no meaningful static pose: hide it.
+  if (pl.p.startsWith('CP_Air_Traffic_')) { trafficSkipped++; continue; }
   const k = pl.p + '|' + pl.t.map(v => v.toFixed(2)).join(',');
   const prev = dupSeen.get(k);
   if (prev) {
@@ -759,8 +779,8 @@ for (const [prefabName, list] of byPrefab) {
   }
 }
 console.log(`city built: ${drawMeshes} instanced meshes from ${placements.length}/${SCENE.placements.length} placements ` +
-            `(${SCENE.placements.length - placements.length} duplicates dropped, ${skipped} FX-only skipped, ` +
-            `${fixCount}/${SIGN_FIXES.length} sign fixes applied)`);
+            `(${SCENE.placements.length - placements.length - trafficSkipped} duplicates dropped, ${trafficSkipped} traffic-pool hidden, ` +
+            `${skipped} FX-only skipped, ${fixCount}/${SIGN_FIXES.length} sign fixes applied)`);
 
 // ---------- city ground plane: REMOVED (see bundle/main.js) ----------
 
@@ -1282,20 +1302,84 @@ function selectGender(g) {
 }
 document.querySelectorAll('.m-card').forEach(c =>
   c.addEventListener('click', () => selectGender(c.dataset.g)));
+// ---------- pause / resume plumbing ----------
+// requestPointerLock() returns a Promise in current Chrome; it REJECTS when
+// called inside the ~1.25 s cooldown after an Escape-exit (and in headless /
+// unsupported environments). The old code called it bare — the rejection hit
+// the global unhandledrejection handler and slammed the FATAL error overlay
+// over the pause menu, forcing a full reload. Always go through this helper.
+function tryPointerLock() {
+  try {
+    const p = renderer.domElement.requestPointerLock?.();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  } catch { /* older engines throw synchronously — ignore */ }
+}
+
+let chosenId = null;        // the runner actually in the world
+let pendingGender = null;   // the runner picked on the pause widget (applied on resume)
+
+function openPauseMenu() {
+  if (phase !== 'play') return;
+  freezeGameplayState();
+  phase = 'pause';
+  syncPauseWidget();
+  $('pauseMenu').classList.add('show');
+  document.exitPointerLock?.();   // free the cursor for mouse-driven menu use
+}
+
+function resumeGame() {
+  if (phase !== 'pause') return;
+  applyPendingCharacter();
+  document.activeElement?.blur?.();   // a focused RESUME re-fires on Space/Enter
+  phase = 'play';
+  $('pauseMenu').classList.remove('show');
+  restoreGameplayState();
+  // Gameplay never depends on the lock (headless can't lock); if the browser
+  // is still in its Escape cooldown the request is denied and the click-to-
+  // relock handler below picks it up on the next canvas click.
+  tryPointerLock();
+}
+
+// The pause-menu runner select used to be cosmetic — the name flipped but the
+// same character dropped back in. Now the choice is staged in pendingGender
+// and swapped for real on resume, keeping the physics state untouched.
+function applyPendingCharacter() {
+  if (!chosen || !pendingGender || pendingGender === chosenId) return;
+  const next = players[pendingGender];
+  if (!next) return;
+  scene.remove(chosen.group); scene.remove(chosen.webGroup);
+  if (!next.group.parent) scene.add(next.group);
+  if (!next.webGroup.parent) scene.add(next.webGroup);
+  next.group.position.copy(ctrl.pos);
+  next.yaw = chosen.yaw;
+  next.webGroup.visible = false;
+  chosen = next;
+  chosenId = pendingGender;
+  window.__player = chosen;
+  showMsg(`runner swapped — ${PAUSE_CHARS.find(c => c.id === chosenId)?.name ?? chosenId}`, 1.6);
+}
+
+// open the widget on the runner you're actually playing, not always slot 0
+function syncPauseWidget() {
+  const idx = PAUSE_CHARS.findIndex(c => c.id === (chosenId ?? selGender));
+  pmIndex = idx >= 0 ? idx : 0;
+  pendingGender = PAUSE_CHARS[pmIndex].id;
+  pmName.textContent = PAUSE_CHARS[pmIndex].name;
+  pmTag.textContent = PAUSE_CHARS[pmIndex].tag;
+}
+
 addEventListener('keydown', e => {
   if (phase === 'menu') {
     // Mouse-only menu navigation (arrow keys intentionally not handled).
     if (e.code === 'Enter' && selGender) startGame();
   } else if (phase === 'pause' && (e.code === 'Enter' || e.code === 'Escape')) {
     // Enter resumes (existing behavior); Escape toggles back into the game.
-    renderer.domElement.requestPointerLock?.();
+    resumeGame();
   } else if (phase === 'play' && e.code === 'Escape' && !document.pointerLockElement) {
     // Fallback when pointer lock isn't active (lock request failed / unsupported):
     // Escape must still open the pause menu. With an active lock the browser
     // exits the lock on Escape and the pointerlockchange handler pauses us.
-    freezeGameplayState();
-    phase = 'pause';
-    $('pauseMenu').classList.add('show');
+    openPauseMenu();
   }
   // T cycles graphics presets — game control, gated to active gameplay so it
   // can't leak into the menus while paused.
@@ -1303,6 +1387,13 @@ addEventListener('keydown', e => {
     applyPreset(PRESET_ORDER[(PRESET_ORDER.indexOf(presetName) + 1) % PRESET_ORDER.length]);
 });
 enterBtn.addEventListener('click', () => selGender && startGame());
+
+// If the browser denied the resume-time lock request (Escape cooldown), the
+// next click on the canvas re-acquires it — previously mouse-look just died
+// silently until the next pause/resume cycle.
+renderer.domElement.addEventListener('click', () => {
+  if (phase === 'play' && document.pointerLockElement !== renderer.domElement) tryPointerLock();
+});
 
 function startGame() {
   // Re-entry guard — THE "restarts from the sky every few seconds" bug:
@@ -1318,15 +1409,18 @@ function startGame() {
   document.activeElement?.blur?.();
   enterBtn.disabled = true;
   chosen = players[selGender];
+  chosenId = selGender;
+  pendingGender = selGender;
   const other = players[selGender === 'man' ? 'girl' : 'man'];
   scene.remove(other.group);
+  scene.remove(other.webGroup);   // its rope group lingered (invisible) in the scene
   window.__player = chosen;
   doDive(false);
   rig.blendFrom(camera, 1.5);   // carry the aerial menu shot straight into the plunge
   menuEl.classList.add('gone');
   $('stats').classList.add('on');
   phase = 'play';   // game logic must not depend on pointer lock (headless can't lock)
-  renderer.domElement.requestPointerLock?.();
+  tryPointerLock();
 }
 
 function doDive(isReset, cause = isReset ? 'manual-R' : 'start') {
@@ -1356,14 +1450,10 @@ document.addEventListener('pointerlockchange', () => {
   usedLock = usedLock || document.pointerLockElement !== null;
   if (phase === 'menu' || !usedLock) return;
   if (document.pointerLockElement === renderer.domElement) {
-    phase = 'play';
-    $('pauseMenu').classList.remove('show');
-    restoreGameplayState();
+    if (phase === 'pause') resumeGame();   // lock granted after Esc/Enter/RESUME
+    else phase = 'play';
   } else if (phase === 'play') {
-    freezeGameplayState();
-    phase = 'pause';
-    $('pauseMenu').classList.add('show');
-    document.exitPointerLock?.();   // free the cursor for mouse-driven menu use
+    openPauseMenu();
   }
 });
 
@@ -1409,6 +1499,7 @@ const pmDisplay = $('pmCharDisplay'), pmName = $('pmCharName'), pmTag = $('pmCha
 function pmShow(index, direction = 0) {
   pmIndex = (index + PAUSE_CHARS.length) % PAUSE_CHARS.length;
   const c = PAUSE_CHARS[pmIndex];
+  pendingGender = c.id;   // staged; applied to the live runner on resume
   selectGender(c.id);   // keep the real selection + main-menu cards in sync
   pmName.textContent = c.name;
   pmTag.textContent = c.tag;
@@ -1425,7 +1516,7 @@ pmName.textContent = PAUSE_CHARS[0].name;
 pmTag.textContent = PAUSE_CHARS[0].tag;
 $('pmPrev').addEventListener('click', () => pmShow(pmIndex - 1, -1));
 $('pmNext').addEventListener('click', () => pmShow(pmIndex + 1, 1));
-$('pmResume').addEventListener('click', () => renderer.domElement.requestPointerLock?.());
+$('pmResume').addEventListener('click', () => resumeGame());
 
 // ---------- HUD ----------
 const statsEl = { speed: $('stSpeed'), height: $('stHeight'), state: $('stState') };
@@ -1485,7 +1576,9 @@ function animate() {
   } else {
     rig.forward(camDir, input);
     if (phase === 'play') ctrl.update(dt, input, input.yaw, camDir);
-    if (chosen) {
+    // PAUSE = full freeze: skip the character mixer and the camera rig so the
+    // runner doesn't keep animating/drifting behind the pause overlay
+    if (chosen && phase === 'play') {
       chosen.update({
         dt,
         mode: ctrl.mode,
@@ -1499,7 +1592,7 @@ function animate() {
           : 0,
       });
     }
-    rig.update(dt, input, ctrl);
+    if (phase === 'play') rig.update(dt, input, ctrl);   // frozen while paused
     if (window.__freeCam && window.__fcPos) {   // debug screenshots: let __tp/__lookAt own the camera
       camera.position.copy(window.__fcPos);
       if (window.__fcLook) camera.lookAt(...window.__fcLook);
