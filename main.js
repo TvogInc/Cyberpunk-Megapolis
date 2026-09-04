@@ -15,7 +15,7 @@ import { Player } from './player.js?v=8';
 // build stamp: shown in the HUD + console so a stale-cache session is
 // recognizable at a glance (a mixed old/new module graph once reproduced the
 // "restart from the sky every few seconds" loop with zero errors)
-const BUILD = '2026-08-31a1';
+const BUILD = '2026-09-03a1';
 console.log(`[build] ${BUILD}`);
 
 // ---------- coordinate convention (verified: case A — Blender FBX->glTF export_yup) ----------
@@ -84,13 +84,13 @@ renderer.debug.checkShaderErrors = false;
 // surface GPU context loss instead of silently freezing on a blank canvas
 renderer.domElement.addEventListener('webglcontextlost', e => {
   e.preventDefault();
-  showFatal('WebGL 上下文丢失（GPU 资源不足或驱动重置）— 点击重试恢复。');
+  showFatal('WebGL context lost (GPU resources exhausted or driver reset) — click Retry to recover.');
 });
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.12;
 renderer.info.autoReset = false;   // composer renders multiple passes per frame; HUD sums them
 renderer.domElement.setAttribute('aria-label',
-  'Cyberpunk Megapolis 3D 游戏画面：WASD 移动，鼠标转动视角，空格跳跃/按住发射蛛丝，E 飞掠，R 重新跃入，T 切换昼夜');
+  'Cyberpunk Megapolis 3D game view: WASD to move, mouse to look around, Space to jump or fire a web line, E to zip, R to re-enter, T to cycle graphics presets');
 $('app').appendChild(renderer.domElement);
 // touch devices get a clear notice instead of dead controls (no touch gameplay)
 if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) {
@@ -99,7 +99,7 @@ if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) {
     'font-size:12px;letter-spacing:.18em;color:#eef1f8;background:rgba(8,10,22,0.72);' +
     'border:1px solid rgba(140,160,255,0.25);border-radius:8px;padding:9px 18px;' +
     'backdrop-filter:blur(3px);pointer-events:none;';
-  t.textContent = '请使用键盘和鼠标 · PLEASE USE A KEYBOARD AND MOUSE';
+  t.textContent = 'PLEASE USE A KEYBOARD AND MOUSE';
   document.body.appendChild(t);
 }
 const MAXANISO = renderer.capabilities.getMaxAnisotropy();
@@ -944,11 +944,11 @@ const aerialPos = center.clone().setY(bounds.max.y + 260);
 const aerialQuat = new THREE.Quaternion().setFromRotationMatrix(
   new THREE.Matrix4().lookAt(aerialPos, center, new THREE.Vector3(0, 0, -1)));
 const LANDMARKS = [
-  ['1 街道起点', convPos(SCENE.camera.t), convQuat(SCENE.camera.r)],
-  ['2 地铁站', ...frameView(metro)],
-  ['3 贫民窟', ...frameView(slums)],
-  ['4 摩天楼', ...frameView(towers, 140, 90, 50)],
-  ['5 鸟瞰全城', aerialPos, aerialQuat],
+  ['1 Street Start', convPos(SCENE.camera.t), convQuat(SCENE.camera.r)],
+  ['2 Metro Station', ...frameView(metro)],
+  ['3 Slums', ...frameView(slums)],
+  ['4 Skyscrapers', ...frameView(towers, 140, 90, 50)],
+  ['5 Bird\'s-Eye City', aerialPos, aerialQuat],
 ];
 
 // ---------- character materials (Survivors pack) ----------
@@ -1322,7 +1322,7 @@ function openPauseMenu() {
   if (phase !== 'play') return;
   freezeGameplayState();
   phase = 'pause';
-  syncPauseWidget();
+  syncPauseWidget(true);
   $('pauseMenu').classList.add('show');
   document.exitPointerLock?.();   // free the cursor for mouse-driven menu use
 }
@@ -1359,13 +1359,25 @@ function applyPendingCharacter() {
   showMsg(`runner swapped — ${PAUSE_CHARS.find(c => c.id === chosenId)?.name ?? chosenId}`, 1.6);
 }
 
-// open the widget on the runner you're actually playing, not always slot 0
-function syncPauseWidget() {
-  const idx = PAUSE_CHARS.findIndex(c => c.id === (chosenId ?? selGender));
-  pmIndex = idx >= 0 ? idx : 0;
-  pendingGender = PAUSE_CHARS[pmIndex].id;
-  pmName.textContent = PAUSE_CHARS[pmIndex].name;
-  pmTag.textContent = PAUSE_CHARS[pmIndex].tag;
+// open the widget on the runner you're actually playing, not always slot 0.
+// reset=true (on pause open) stages the ACTIVE runner; card clicks only re-stage.
+function syncPauseWidget(reset = false) {
+  const active = chosenId ?? selGender;
+  if (reset || !pendingGender) pendingGender = active;
+  for (const c of PAUSE_CHARS) {
+    const el = pmCards[c.id];
+    if (!el) continue;
+    el.classList.toggle('sel', c.id === pendingGender);
+    el.querySelector('.pm-char-badge').textContent = c.id === active ? 'ACTIVE' : '';
+  }
+  const note = $('pmSwapNote');
+  if (note) {
+    const swap = pendingGender && active && pendingGender !== active;
+    note.textContent = swap
+      ? `swaps to ${PAUSE_CHARS.find(c => c.id === pendingGender).name} on resume`
+      : '';
+    note.classList.toggle('on', !!swap);
+  }
 }
 
 addEventListener('keydown', e => {
@@ -1440,7 +1452,7 @@ function doDive(isReset, cause = isReset ? 'manual-R' : 'start') {
     const f = $('fade');
     f.style.opacity = '0.85';
     setTimeout(() => { f.style.opacity = '0'; }, 380);
-    showMsg('重新跃入城市', 1.6);
+    showMsg('Back in the city', 1.6);
   }
 }
 
@@ -1489,34 +1501,23 @@ function restoreGameplayState() {
   console.log(`[resume] restored airTime=${ctrl.airTime.toFixed(3)}s mode=${ctrl.mode} webOn=${ctrl.webOn}`);
 }
 
-// ---------- pause menu: mouse-driven character select + resume ----------
+// ---------- pause menu: click-to-pick runner cards + resume / quit ----------
 const PAUSE_CHARS = [
-  { id: 'man', name: 'Survival Man', tag: 'RUNNER 01 // READY' },
-  { id: 'girl', name: 'Survival Girl', tag: 'RUNNER 02 // READY' },
+  { id: 'man', name: 'Survival Man', tag: 'RUNNER 01' },
+  { id: 'girl', name: 'Survival Girl', tag: 'RUNNER 02' },
 ];
-let pmIndex = 0;
-const pmDisplay = $('pmCharDisplay'), pmName = $('pmCharName'), pmTag = $('pmCharTag');
-function pmShow(index, direction = 0) {
-  pmIndex = (index + PAUSE_CHARS.length) % PAUSE_CHARS.length;
-  const c = PAUSE_CHARS[pmIndex];
-  pendingGender = c.id;   // staged; applied to the live runner on resume
-  selectGender(c.id);   // keep the real selection + main-menu cards in sync
-  pmName.textContent = c.name;
-  pmTag.textContent = c.tag;
-  pmDisplay.style.transition = 'none';
-  pmDisplay.style.opacity = '0';
-  pmDisplay.style.transform = `translateX(${direction * 26}px)`;
-  void pmDisplay.offsetWidth;   // reflow, then animate in
-  pmDisplay.style.transition = 'opacity .22s ease, transform .22s ease';
-  pmDisplay.style.opacity = '1';
-  pmDisplay.style.transform = 'translateX(0)';
-}
-// display-only init: keeps Enter disabled until a real selection is made
-pmName.textContent = PAUSE_CHARS[0].name;
-pmTag.textContent = PAUSE_CHARS[0].tag;
-$('pmPrev').addEventListener('click', () => pmShow(pmIndex - 1, -1));
-$('pmNext').addEventListener('click', () => pmShow(pmIndex + 1, 1));
+const pmCards = {};
+document.querySelectorAll('.pm-char').forEach(el => {
+  pmCards[el.dataset.g] = el;
+  el.addEventListener('click', () => {
+    if (!PAUSE_CHARS.some(c => c.id === el.dataset.g)) return;
+    pendingGender = el.dataset.g;   // staged; applied to the live runner on resume
+    selectGender(el.dataset.g);     // keep the real selection + main-menu cards in sync
+    syncPauseWidget();
+  });
+});
 $('pmResume').addEventListener('click', () => resumeGame());
+$('pmQuit').addEventListener('click', () => location.reload());
 
 // ---------- HUD ----------
 const statsEl = { speed: $('stSpeed'), height: $('stHeight'), state: $('stState') };
@@ -1528,7 +1529,7 @@ function showMsg(text, seconds = 2.2) {
   el.style.opacity = '1';
   msgTimer = seconds;
 }
-const MODE_CN = { ground: '地面', air: '空中', swing: '摆荡', wallrun: '墙跑', zip: '飞掠' };
+const MODE_LABELS = { ground: 'GROUND', air: 'AIRBORNE', swing: 'SWINGING', wallrun: 'WALL RUN', zip: 'ZIP' };
 
 // ---------- debug hooks ----------
 if (location.search.includes('debug')) {
@@ -1611,14 +1612,14 @@ function animate() {
         const f = $('fade');
         f.style.opacity = '0.85';
         setTimeout(() => { f.style.opacity = '0'; }, 380);
-        showMsg('已拉回附近的安全点', 1.6);
+        showMsg('Pulled back to a safe spot', 1.6);
       } else doDive(true, 'void-nosafe');
     }
     input.endFrame();
 
     statsEl.speed.textContent = Math.round(ctrl.vel.length() * 3.6);
     statsEl.height.textContent = Math.max(0, Math.round(ctrl.pos.y));
-    statsEl.state.textContent = MODE_CN[ctrl.mode] || ctrl.mode;
+    statsEl.state.textContent = MODE_LABELS[ctrl.mode] || ctrl.mode;
     if (msgTimer > 0) {
       msgTimer -= dt;
       if (msgTimer <= 0) $('msg').style.opacity = '0';
